@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 from models import TaskPriority, Task, TaskStatus
 from storage import TaskStorage
+from task_parser import parse_task_text
 
 
 class TaskManager:
@@ -24,7 +25,13 @@ class TaskManager:
         task_id = self.storage.add_task(task)
         return task_id
 
-    def list_tasks(self, status_filter=None, priority_filter=None, show_overdue=False):
+    def create_task_from_text(self, text):
+        """Create a task from free-form text using the parser."""
+        task = parse_task_text(text)
+        task_id = self.storage.add_task(task)
+        return task_id
+
+    def list_tasks(self, status_filter=None, priority_filter=None, show_overdue=False, include_deleted=False):
         if show_overdue:
             return self.storage.get_overdue_tasks()
 
@@ -36,7 +43,7 @@ class TaskManager:
             priority = TaskPriority(priority_filter)
             return self.storage.get_tasks_by_priority(priority)
 
-        return self.storage.get_all_tasks()
+        return self.storage.get_all_tasks(include_deleted=include_deleted)
 
     def update_task_status(self, task_id, new_status_value):
         new_status = TaskStatus(new_status_value)

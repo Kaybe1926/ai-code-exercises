@@ -39,6 +39,46 @@ class TaskManager:
         return self.storage.get_all_tasks()
 
     def update_task_status(self, task_id, new_status_value):
+        """Change the status of a task, handling completion specially.
+
+        Converts the provided status value into a :class:`TaskStatus` enum
+        member and updates the corresponding task in storage. When the
+        new status is ``DONE`` the method retrieves the task object,
+        marks it as completed (which updates timestamps) and forces an
+        immediate save of the storage backend. For any other status the
+        update is delegated to ``self.storage.update_task``.
+
+        Args:
+            task_id (str): Identifier of the task to update.
+            new_status_value (str): New status value; must be one of the
+                values accepted by :class:`TaskStatus` (e.g., ``"todo"``,
+                ``"in_progress"``).
+
+        Returns:
+            bool | None: ``True`` if the status was successfully changed.
+            ``False`` if the storage delegation indicated failure. If the
+            task to mark done is not found, ``None`` is returned.
+            A ``ValueError`` from invalid ``new_status_value`` is propagated.
+
+        Raises:
+            ValueError: Raised when ``new_status_value`` cannot be converted
+                to a ``TaskStatus`` member.
+
+        Example:
+            >>> manager.update_task_status("abc123", "in_progress")
+            True
+            >>> manager.update_task_status("abc123", "done")
+            True
+
+        Notes:
+            - The method treats the ``DONE`` status specially because
+              tasks need their ``completed_at`` timestamp set; storage
+              updates for other statuses do not trigger timestamp changes.
+            - There is no check to prevent setting the same status again.
+            - The return value is inconsistent when the task is missing in
+              the DONE branch; callers should consider this when using the
+              result.
+        """
         new_status = TaskStatus(new_status_value)
         if new_status == TaskStatus.DONE:
             task = self.storage.get_task(task_id)

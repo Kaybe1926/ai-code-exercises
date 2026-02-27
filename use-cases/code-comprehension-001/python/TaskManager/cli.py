@@ -7,6 +7,35 @@ from models import TaskStatus, TaskPriority
 
 
 def format_task(task):
+    """Format a task object for display in the CLI.
+
+    Converts a :class:`models.Task` instance into a human-readable string
+    that includes status, priority, title, description, due date, tags, and
+    creation timestamp. Status and priority are represented by simple
+    symbols to keep output compact when listing multiple tasks.
+
+    Args:
+        task (models.Task): The task instance to format. The object is
+            expected to have attributes ``id``, ``title``, ``description``,
+            ``status``, ``priority``, ``due_date``, ``tags`` and
+            ``created_at``.
+
+    Returns:
+        str: A multi-line string suitable for printing to the console. The
+            first line shows the status symbol, truncated task ID, priority
+            indicator, and title. Subsequent lines include the description,
+            due date or placeholder text, tags or a fallback message, and
+            creation timestamp.
+
+    Notes:
+        - ``task.id`` is truncated to the first eight characters for brevity.
+        - ``due_date`` may be ``None``; in that case "No due date" is shown.
+        - ``tags`` is expected to be an iterable of strings; an empty list
+          results in "No tags" text.
+        - The formatting logic assumes ``status`` and ``priority`` are
+          members of :class:`TaskStatus` and :class:`TaskPriority`,
+          respectively.
+    """
     status_symbol = {
         TaskStatus.TODO: "[ ]",
         TaskStatus.IN_PROGRESS: "[>]",
@@ -32,6 +61,43 @@ def format_task(task):
     )
 
 def main():
+    """Entry point for the Task Manager command-line interface.
+
+    This function configures and parses command-line arguments for a
+    variety of task management operations (create, list, update status,
+    update priority, due date, tag management, show, delete, stats). It
+    instantiates a :class:`TaskManager` and dispatches the requested
+    command, handling output formatting and error reporting.
+
+    The CLI supports filtering, tagging, and statistics reporting to
+    facilitate task organization. Arguments are validated using argparse
+    to ensure correct types and choices where appropriate.
+
+    Returns:
+        None: This function does not return a value; it exits the
+        program after printing results or help text.
+
+    Raises:
+        SystemExit: ``argparse`` may raise this when parsing fails or
+            when ``--help`` is invoked. Other errors raised by
+            :class:`TaskManager` methods are propagated.
+
+    Example:
+        >>> # create a new task
+        >>> python cli.py create "Buy groceries" -d "Milk, eggs" -p 2 -u 2025-01-01 -t shopping,errands
+        Created task with ID: 123e4567
+
+        >>> # list overdue tasks
+        >>> python cli.py list -o
+
+    Notes:
+        - The ``TaskManager`` class is responsible for data persistence
+          and business logic; the CLI only orchestrates user input and
+          output.
+        - Date arguments must follow the YYYY-MM-DD format; invalid dates will
+          result in a failure message.
+        - Tags supplied as a comma-separated string are trimmed of whitespace.
+    """
     parser = argparse.ArgumentParser(description="Task Manager CLI")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 

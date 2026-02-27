@@ -110,3 +110,84 @@ def get_next_weekday(current_date, weekday):
     if days_ahead <= 0:  # Target day already happened this week
         days_ahead += 7
     return current_date + timedelta(days=days_ahead)
+
+
+def parse_task_text(text):
+    """Parse a free-form task text line into a structured Task object."""
+    title = text
+    priority = TaskPriority.MEDIUM  # default
+    due_date = None
+    tags = []
+
+    # Detect priority markers like !!, !!!, etc.
+    if "!" in text:
+        count = text.count("!")
+        if count >= 3:
+            priority = TaskPriority.URGENT
+        elif count == 2:
+            priority = TaskPriority.HIGH
+        elif count == 1:
+            priority = TaskPriority.MEDIUM
+
+    # Detect due date patterns like #YYYY-MM-DD or #tomorrow
+    if "#" in text:
+        parts = text.split()
+        for part in parts:
+            if part.startswith("#"):
+                date_str = part[1:].lower()
+                today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+                if date_str == "today":
+                    due_date = today
+                    break
+                elif date_str == "tomorrow":
+                    due_date = today + timedelta(days=1)
+                    break
+                elif date_str == "next_week":
+                    due_date = today + timedelta(days=7)
+                    break
+                elif date_str in ("monday", "mon"):
+                    due_date = get_next_weekday(today, 0)  # 0 = Monday
+                    break
+                elif date_str in ("tuesday", "tue"):
+                    due_date = get_next_weekday(today, 1)
+                    break
+                elif date_str in ("wednesday", "wed"):
+                    due_date = get_next_weekday(today, 2)
+                    break
+                elif date_str in ("thursday", "thu"):
+                    due_date = get_next_weekday(today, 3)
+                    break
+                elif date_str in ("friday", "fri"):
+                    due_date = get_next_weekday(today, 4)
+                    break
+                elif date_str in ("saturday", "sat"):
+                    due_date = get_next_weekday(today, 5)
+                    break
+                elif date_str in ("sunday", "sun"):
+                    due_date = get_next_weekday(today, 6)
+                    break
+                else:
+                    # Try to parse as YYYY-MM-DD
+                    try:
+                        due_date = datetime.fromisoformat(date_str)
+                        break
+                    except ValueError:
+                        pass
+
+    # Detect tags marked with @
+    if "@" in text:
+        parts = text.split()
+        for part in parts:
+            if part.startswith("@"):
+                tags.append(part[1:])
+
+    # Clean up title by removing special markers
+    title = " ".join(word for word in text.split() if not word.startswith("!") and not word.startswith("#") and not word.startswith("@"))
+
+    return Task(
+        title=title.strip(),
+        priority=priority,
+        due_date=due_date,
+        tags=tags
+    )

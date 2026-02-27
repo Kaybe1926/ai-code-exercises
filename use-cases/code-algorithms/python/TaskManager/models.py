@@ -28,6 +28,7 @@ class Task:
         self.due_date = due_date
         self.completed_at = None
         self.tags = tags or []
+        self.deleted_at = None  # Track when task was deleted
 
     def update(self, **kwargs):
         for key, value in kwargs.items():
@@ -39,6 +40,15 @@ class Task:
         self.status = TaskStatus.DONE
         self.completed_at = datetime.now()
         self.updated_at = self.completed_at
+
+    def mark_as_deleted(self):
+        """Mark the task as deleted with current timestamp."""
+        self.deleted_at = datetime.now()
+        self.updated_at = self.deleted_at
+
+    def is_deleted(self):
+        """Check if the task has been deleted."""
+        return self.deleted_at is not None
 
     def is_overdue(self):
         if not self.due_date:

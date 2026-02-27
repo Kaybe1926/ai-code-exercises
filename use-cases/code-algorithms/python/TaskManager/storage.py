@@ -11,7 +11,7 @@ class TaskEncoder(json.JSONEncoder):
             task_dict['priority'] = obj.priority.value
             task_dict['status'] = obj.status.value
             # Convert datetime objects to ISO format strings
-            for key in ['created_at', 'updated_at', 'due_date', 'completed_at']:
+            for key in ['created_at', 'updated_at', 'due_date', 'completed_at', 'deleted_at']:
                 if task_dict.get(key) is not None:
                     task_dict[key] = task_dict[key].isoformat()
             return task_dict
@@ -35,6 +35,9 @@ class TaskDecoder(json.JSONDecoder):
 
             if obj.get('due_date'):
                 task.due_date = datetime.fromisoformat(obj['due_date'])
+
+            if obj.get('deleted_at'):
+                task.deleted_at = datetime.fromisoformat(obj['deleted_at'])
 
             task.tags = obj.get('tags', [])
             return task
@@ -81,21 +84,27 @@ class TaskStorage:
         return False
 
     def delete_task(self, task_id):
-        if task_id in self.tasks:
-            del self.tasks[task_id]
+        task = self.get_task(task_id)
+        if task and not task.is_deleted():
+            task.mark_as_deleted()
             self.save()
             return True
         return False
 
-    def get_all_tasks(self):
-        return list(self.tasks.values())
+    def get_all_tasks(self, include_deleted=False):
+        if include_deleted:
+            return list(self.tasks.values())
+        return [task for task in self.tasks.values() if not task.is_deleted()]
 
-    def get_tasks_by_status(self, status):
-        return [task for task in self.tasks.values() if task.status == status]
+    def get_tasks_by_status(self, status, include_deleted=False):
+        tasks = self.tasks.values() if include_deleted else [task for task in self.tasks.values() if not task.is_deleted()]
+        return [task for task in tasks if task.status == status]
 
-    def get_tasks_by_priority(self, priority):
-        return [task for task in self.tasks.values() if task.priority == priority]
+    def get_tasks_by_priority(self, priority, include_deleted=False):
+        tasks = self.tasks.values() if include_deleted else [task for task in self.tasks.values() if not task.is_deleted()]
+        return [task for task in tasks if task.priority == priority]
 
-    def get_overdue_tasks(self):
-        return [task for task in self.tasks.values() if task.is_overdue()]
+    def get_overdue_tasks(self, include_deleted=False):
+        tasks = self.tasks.values() if include_deleted else [task for task in self.tasks.values() if not task.is_deleted()]
+        return [task for task in tasks if task.is_overdue()]
 

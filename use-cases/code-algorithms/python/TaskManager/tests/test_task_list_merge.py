@@ -33,7 +33,7 @@ class TaskListMergeTest(unittest.TestCase):
         local_tasks = {"task1": self.task1, "task2": self.task2}
         remote_tasks = {}
         
-        merged, to_create_remote, to_update_remote, to_create_local, to_update_local = merge_task_lists(
+        merged, to_create_remote, to_update_remote, to_create_local, to_update_local, conflicts = merge_task_lists(
             local_tasks, remote_tasks
         )
         
@@ -51,13 +51,16 @@ class TaskListMergeTest(unittest.TestCase):
         self.assertEqual(len(to_update_remote), 0)
         self.assertEqual(len(to_create_local), 0)
         self.assertEqual(len(to_update_local), 0)
+        
+        # Check conflicts are empty
+        self.assertEqual(len(conflicts), 0)
 
     def test_merge_task_lists_only_remote(self):
         """Test merging when tasks exist only in remote source."""
         local_tasks = {}
         remote_tasks = {"task2": self.task2, "task3": self.task3}
         
-        merged, to_create_remote, to_update_remote, to_create_local, to_update_local = merge_task_lists(
+        merged, to_create_remote, to_update_remote, to_create_local, to_update_local, conflicts = merge_task_lists(
             local_tasks, remote_tasks
         )
         
@@ -72,9 +75,12 @@ class TaskListMergeTest(unittest.TestCase):
         self.assertIn("task3", to_create_local)
         
         # Check other lists are empty
+        self.assertEqual(len(to_update_local), 0)
         self.assertEqual(len(to_create_remote), 0)
         self.assertEqual(len(to_update_remote), 0)
-        self.assertEqual(len(to_update_local), 0)
+        
+        # Check conflicts are empty
+        self.assertEqual(len(conflicts), 0)
 
     def test_merge_task_lists_both_sources(self):
         """Test merging when tasks exist in both sources with conflicts."""
@@ -92,7 +98,7 @@ class TaskListMergeTest(unittest.TestCase):
         local_tasks = {"task1": local_task}
         remote_tasks = {"task1": remote_task}
         
-        merged, to_create_remote, to_update_remote, to_create_local, to_update_local = merge_task_lists(
+        merged, to_create_remote, to_update_remote, to_create_local, to_update_local, conflicts = merge_task_lists(
             local_tasks, remote_tasks
         )
         
@@ -114,6 +120,9 @@ class TaskListMergeTest(unittest.TestCase):
         self.assertEqual(len(to_create_local), 0)
         self.assertEqual(len(to_update_remote), 1)  # Remote needs tag update
         self.assertEqual(len(to_update_local), 1)   # Local needs field updates
+        
+        # Check conflicts are empty (auto mode)
+        self.assertEqual(len(conflicts), 0)
 
     def test_resolve_task_conflict_remote_newer(self):
         """Test resolving conflicts when remote task is newer."""
@@ -123,7 +132,7 @@ class TaskListMergeTest(unittest.TestCase):
         remote_task = Task("Remote Task", "Remote Description", TaskPriority.HIGH)
         remote_task.updated_at = self.now  # More recent
         
-        merged_task, update_local, update_remote = resolve_task_conflict(local_task, remote_task)
+        merged_task, update_local, update_remote, conflicts = resolve_task_conflict(local_task, remote_task)
         
         # Remote is newer, so its fields should be used
         self.assertEqual(merged_task.title, "Remote Task")
@@ -133,6 +142,9 @@ class TaskListMergeTest(unittest.TestCase):
         # Local should be updated, remote should not
         self.assertTrue(update_local)
         self.assertFalse(update_remote)
+        
+        # Check conflicts are empty (auto mode)
+        self.assertEqual(len(conflicts), 0)
 
     def test_resolve_task_conflict_local_newer(self):
         """Test resolving conflicts when local task is newer."""
@@ -142,7 +154,7 @@ class TaskListMergeTest(unittest.TestCase):
         remote_task = Task("Remote Task", "Remote Description", TaskPriority.HIGH)
         remote_task.updated_at = self.now - timedelta(days=1)
         
-        merged_task, update_local, update_remote = resolve_task_conflict(local_task, remote_task)
+        merged_task, update_local, update_remote, conflicts = resolve_task_conflict(local_task, remote_task)
         
         # Local is newer, so its fields should be used
         self.assertEqual(merged_task.title, "Local Task")
@@ -152,6 +164,9 @@ class TaskListMergeTest(unittest.TestCase):
         # Remote should be updated, local should not
         self.assertFalse(update_local)
         self.assertTrue(update_remote)
+        
+        # Check conflicts are empty (auto mode)
+        self.assertEqual(len(conflicts), 0)
 
     def test_resolve_task_conflict_completed_status(self):
         """Test resolving conflicts with completed status."""
@@ -164,7 +179,7 @@ class TaskListMergeTest(unittest.TestCase):
         remote_task.status = TaskStatus.DONE
         remote_task.completed_at = self.now - timedelta(days=1)
         
-        merged_task, update_local, update_remote = resolve_task_conflict(local_task, remote_task)
+        merged_task, update_local, update_remote, conflicts = resolve_task_conflict(local_task, remote_task)
         
         # Completed status should win even if the task is older
         self.assertEqual(merged_task.status, TaskStatus.DONE)
@@ -173,6 +188,9 @@ class TaskListMergeTest(unittest.TestCase):
         # Local should be updated with completed status
         self.assertTrue(update_local)
         self.assertTrue(update_remote)  # Remote should be updated with newer timestamp
+        
+        # Check conflicts are empty (auto mode)
+        self.assertEqual(len(conflicts), 0)
 
     def test_resolve_task_conflict_tag_merging(self):
         """Test that tags are properly merged from both sources."""
@@ -182,7 +200,7 @@ class TaskListMergeTest(unittest.TestCase):
         remote_task = Task("Task", "Description", TaskPriority.MEDIUM)
         remote_task.tags = ["tag2", "tag3"]
         
-        merged_task, update_local, update_remote = resolve_task_conflict(local_task, remote_task)
+        merged_task, update_local, update_remote, conflicts = resolve_task_conflict(local_task, remote_task)
         
         # Tags should be merged from both sources
         self.assertIn("tag1", merged_task.tags)
@@ -193,6 +211,9 @@ class TaskListMergeTest(unittest.TestCase):
         # Both sources should be updated with the merged tags
         self.assertTrue(update_local)
         self.assertTrue(update_remote)
+        
+        # Check conflicts are empty (auto mode)
+        self.assertEqual(len(conflicts), 0)
 
     def test_resolve_task_conflict_different_non_completed_status(self):
         """Test resolving conflicts with different non-completed statuses."""
@@ -204,7 +225,7 @@ class TaskListMergeTest(unittest.TestCase):
         remote_task.updated_at = self.now - timedelta(days=1)
         remote_task.status = TaskStatus.REVIEW
         
-        merged_task, update_local, update_remote = resolve_task_conflict(local_task, remote_task)
+        merged_task, update_local, update_remote, conflicts = resolve_task_conflict(local_task, remote_task)
         
         # Local is newer, so its status should be used
         self.assertEqual(merged_task.status, TaskStatus.IN_PROGRESS)
@@ -212,6 +233,47 @@ class TaskListMergeTest(unittest.TestCase):
         # Remote should be updated with local status
         self.assertFalse(update_local)
         self.assertTrue(update_remote)
+        
+        # Check conflicts are empty (auto mode)
+        self.assertEqual(len(conflicts), 0)
+
+    def test_resolve_task_conflict_manual_mode(self):
+        """Test resolving conflicts in manual mode detects user choice conflicts."""
+        local_task = Task("Local Task", "Local Description", TaskPriority.MEDIUM)
+        local_task.updated_at = self.now - timedelta(days=1)
+        local_task.status = TaskStatus.TODO
+        
+        remote_task = Task("Remote Task", "Remote Description", TaskPriority.HIGH)
+        remote_task.updated_at = self.now  # More recent
+        remote_task.status = TaskStatus.DONE
+        remote_task.completed_at = self.now
+        
+        merged_task, update_local, update_remote, conflicts = resolve_task_conflict(local_task, remote_task, conflict_resolution_mode="manual")
+        
+        # Remote is newer, so its fields should be used
+        self.assertEqual(merged_task.title, "Remote Task")
+        self.assertEqual(merged_task.description, "Remote Description")
+        self.assertEqual(merged_task.priority, TaskPriority.HIGH)
+        self.assertEqual(merged_task.status, TaskStatus.DONE)
+        
+        # Should detect conflicts for title, description, and status
+        self.assertEqual(len(conflicts), 3)
+        
+        # Check title conflict
+        title_conflict = next(c for c in conflicts if c['type'] == 'title_conflict')
+        self.assertEqual(title_conflict['local_value'], "Local Task")
+        self.assertEqual(title_conflict['remote_value'], "Remote Task")
+        self.assertEqual(title_conflict['chosen'], "Remote Task")
+        
+        # Check description conflict
+        desc_conflict = next(c for c in conflicts if c['type'] == 'description_conflict')
+        self.assertEqual(desc_conflict['local_value'], "Local Description")
+        self.assertEqual(desc_conflict['remote_value'], "Remote Description")
+        
+        # Check status conflict (significant status change)
+        status_conflict = next(c for c in conflicts if c['type'] == 'status_conflict')
+        self.assertEqual(status_conflict['local_value'], "todo")
+        self.assertEqual(status_conflict['remote_value'], "done")
 
 
 if __name__ == '__main__':

@@ -1,9 +1,12 @@
 # task_manager/cli.py
 import argparse
+import json
 from datetime import datetime
 
 from task_manager import TaskManager
 from models import TaskStatus, TaskPriority
+from task_list_merge import merge_task_lists
+from storage import TaskDecoder
 
 
 def format_task(task):
@@ -23,9 +26,12 @@ def format_task(task):
 
     due_str = f"Due: {task.due_date.strftime('%Y-%m-%d')}" if task.due_date else "No due date"
     tags_str = f"Tags: {', '.join(task.tags)}" if task.tags else "No tags"
+    
+    # Add deleted indicator
+    deleted_indicator = " [DELETED]" if task.is_deleted() else ""
 
     return (
-        f"{status_symbol[task.status]} {task.id[:8]} - {priority_symbol[task.priority]} {task.title}\n"
+        f"{status_symbol[task.status]} {task.id[:8]} - {priority_symbol[task.priority]} {task.title}{deleted_indicator}\n"
         f"  {task.description}\n"
         f"  {due_str} | {tags_str}\n"
         f"  Created: {task.created_at.strftime('%Y-%m-%d %H:%M')}"
@@ -43,11 +49,16 @@ def main():
     create_parser.add_argument("-u", "--due", help="Due date (YYYY-MM-DD)", default=None)
     create_parser.add_argument("-t", "--tags", help="Comma-separated tags", default="")
 
+    # Create task from text command
+    create_text_parser = subparsers.add_parser("create-text", help="Create a new task from free-form text")
+    create_text_parser.add_argument("text", help="Free-form task text (e.g., 'Buy milk !! #2026-03-01 @shopping')")
+
     # List tasks command
     list_parser = subparsers.add_parser("list", help="List all tasks")
     list_parser.add_argument("-s", "--status", help="Filter by status", choices=["todo", "in_progress", "review", "done"])
     list_parser.add_argument("-p", "--priority", help="Filter by priority", type=int, choices=[1, 2, 3, 4])
     list_parser.add_argument("-o", "--overdue", help="Show only overdue tasks", action="store_true")
+    list_parser.add_argument("-d", "--deleted", help="Include deleted tasks", action="store_true")
 
     # Update task commands
     update_status_parser = subparsers.add_parser("status", help="Update task status")
@@ -80,6 +91,11 @@ def main():
 
     stats_parser = subparsers.add_parser("stats", help="Show task statistics")
 
+    merge_parser = subparsers.add_parser("merge", help="Merge tasks from local and remote sources")
+    merge_parser.add_argument("local_file", help="JSON file containing local tasks")
+    merge_parser.add_argument("remote_file", help="JSON file containing remote tasks")
+    merge_parser.add_argument("--apply", action="store_true", help="Apply merge results to current storage")
+
     args = parser.parse_args()
     task_manager = TaskManager()
 
@@ -95,8 +111,18 @@ def main():
         if task_id:
             print(f"Created task with ID: {task_id}")
 
+    elif args.command == "create-text":
+        task_id = task_manager.create_task_from_text(args.text)
+        if task_id:
+            print(f"Created task with ID: {task_id}")
+            # Show the parsed task details
+            task = task_manager.get_task_details(task_id)
+            if task:
+                print("Parsed task details:")
+                print(format_task(task))
+
     elif args.command == "list":
-        tasks = task_manager.list_tasks(args.status, args.priority, args.overdue)
+        tasks = task_manager.list_tasks(args.status, args.priority, args.overdue, args.deleted)
         if tasks:
             for task in tasks:
                 print(format_task(task))
@@ -158,6 +184,76 @@ def main():
             print(f"  {priority}: {count}")
         print(f"Overdue tasks: {stats['overdue']}")
         print(f"Completed in last 7 days: {stats['completed_last_week']}")
+
+    elif args.command == "merge":
+        # Load local tasks from file
+        try:
+            with open(args.local_file, 'r') as f:
+                local_data = json.load(f, cls=TaskDecoder)
+                local_tasks = {task.id: task for task in local_data} if isinstance(local_data, list) else local_data
+        except Exception as e:
+            print(f"Error loading local tasks from {args.local_file}: {e}")
+            return
+
+        # Load remote tasks from file
+        try:
+            with open(args.remote_file, 'r') as f:
+                remote_data = json.load(f, cls=TaskDecoder)
+                remote_tasks = {task.id: task for task in remote_data} if isinstance(remote_data, list) else remote_data
+        except Exception as e:
+            print(f"Error loading remote tasks from {args.remote_file}: {e}")
+            return
+
+        print(f"Loaded {len(local_tasks)} local tasks and {len(remote_tasks)} remote tasks")
+
+        # Perform merge
+        merged, to_create_remote, to_update_remote, to_create_local, to_update_local = merge_task_lists(
+            local_tasks, remote_tasks
+        )
+
+        print(f"\nMerge Results:")
+        print(f"Total merged tasks: {len(merged)}")
+        print(f"Tasks to create in remote: {len(to_create_remote)}")
+        print(f"Tasks to update in remote: {len(to_update_remote)}")
+        print(f"Tasks to create in local: {len(to_create_local)}")
+        print(f"Tasks to update in local: {len(to_update_local)}")
+
+        if to_create_remote:
+            print(f"\nTasks to create in remote: {list(to_create_remote.keys())}")
+        if to_update_remote:
+            print(f"Tasks to update in remote: {list(to_update_remote.keys())}")
+        if to_create_local:
+            print(f"Tasks to create in local: {list(to_create_local.keys())}")
+        if to_update_local:
+            print(f"Tasks to update in local: {list(to_update_local.keys())}")
+
+        if args.apply:
+            print(f"\nApplying merge results to current storage...")
+            current_tasks = {task.id: task for task in task_manager.storage.get_all_tasks()}
+
+            # Apply creations and updates to current storage (treating it as "local")
+            for task_id, task in to_create_local.items():
+                if task_id not in current_tasks:
+                    task_manager.storage.add_task(task)
+                    print(f"Created task: {task.title}")
+
+            for task_id, task in to_update_local.items():
+                if task_id in current_tasks:
+                    # Update the current task with merged data
+                    current_task = current_tasks[task_id]
+                    current_task.title = task.title
+                    current_task.description = task.description
+                    current_task.priority = task.priority
+                    current_task.due_date = task.due_date
+                    current_task.status = task.status
+                    current_task.tags = task.tags
+                    current_task.updated_at = task.updated_at
+                    task_manager.storage.save()
+                    print(f"Updated task: {task.title}")
+
+            print("Merge results applied to current storage.")
+        else:
+            print(f"\nUse --apply flag to apply these changes to current storage.")
 
     else:
         parser.print_help()
